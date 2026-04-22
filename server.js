@@ -5,11 +5,21 @@ const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_URL }));
+
+// Bulletproof CORS Configuration
+// It tries to use your Vercel link, but falls back to '*' (allow all) to prevent 404 blocks
+app.use(cors({ origin: process.env.CLIENT_URL || '*' }));
 app.use(express.json());
 
+// HEALTH CHECK ROUTE: Keeps the server awake and verifies it's online
+app.get('/', (req, res) => {
+    res.status(200).send("The Data Challenge Backend is LIVE and routing correctly!");
+});
+
+// Initialize Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+// Nodemailer Transporter Setup
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: process.env.SMTP_PORT,
@@ -19,6 +29,7 @@ const transporter = nodemailer.createTransport({
 
 const COURSE_LINK = "https://alagitech.getlearnworlds.com/course/firststepindataanalysis";
 
+// POST Route: Submit Assessment
 app.post('/api/submit-assessment', async (req, res) => {
     try {
         const { email, score, totalQuestions } = req.body;
