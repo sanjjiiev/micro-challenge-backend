@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const dns = require('dns');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -25,13 +26,18 @@ const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: smtpPort,
     secure: smtpPort === 465,
+    requireTLS: smtpPort === 587,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     tls: {
         rejectUnauthorized: false,
     },
-    family: 4,
     greetingTimeout: 10000,
     connectionTimeout: 10000,
+    logger: true,
+    debug: true,
+    lookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4 }, callback);
+    },
 });
 
 transporter.verify()
