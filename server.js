@@ -5,6 +5,9 @@ const dns = require('dns');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
+// Force all DNS resolution to IPv4 globally (prevents IPv6 ENETUNREACH on Render)
+dns.setDefaultResultOrder('ipv4first');
+
 const app = express();
 
 // Bulletproof CORS Configuration
@@ -20,29 +23,41 @@ app.get('/', (req, res) => {
 // Initialize Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-// Nodemailer Transporter Setup
-const smtpPort = Number(process.env.SMTP_PORT);
+const EMAIL_FROM = process.env.SMTP_USER || 'no-reply@alagitech.com';
+
+// Nodemailer transporter — port 465 with direct SSL (more reliable on Render than 587 STARTTLS)
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    requireTLS: smtpPort === 587,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
     tls: {
         rejectUnauthorized: false,
     },
-    greetingTimeout: 10000,
-    connectionTimeout: 10000,
+    // Force IPv4 at the socket level to prevent IPv6 fallback
+    dnsOptions: { family: 4 },
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
     logger: true,
     debug: true,
-    lookup: (hostname, options, callback) => {
-        dns.lookup(hostname, { family: 4 }, callback);
-    },
 });
 
 transporter.verify()
-    .then(() => console.log('SMTP transporter is configured and ready'))
-    .catch(err => console.error('SMTP configuration error:', err));
+    .then(() => console.log('✅ SMTP transporter is configured and ready'))
+    .catch(err => console.error('❌ SMTP configuration error:', err));
+
+const sendEmail = async ({ to, subject, html }) => {
+    return transporter.sendMail({
+        from: `"Alagitech Data Training" <${EMAIL_FROM}>`,
+        to,
+        subject,
+        html,
+    });
+};
 
 const COURSE_LINK = "https://alagitech.getlearnworlds.com/course/firststepindataanalysis";
 
@@ -96,14 +111,21 @@ app.post('/api/submit-assessment', async (req, res) => {
       </div>
     `;
 
-        await transporter.sendMail({
-            from: `"Alagitech Data Training" <${process.env.SMTP_USER}>`,
-            to: email,
-            subject: `Your Assessment Results: ${score}/${totalQuestions}`,
-            html: emailHtml,
-        });
+        // Try sending email, but don't let email failure block the response
+        let emailSent = true;
+        try {
+            await sendEmail({
+                to: email,
+                subject: `Your Assessment Results: ${score}/${totalQuestions}`,
+                html: emailHtml,
+            });
+            console.log(`✅ Email sent successfully to ${email}`);
+        } catch (emailError) {
+            emailSent = false;
+            console.error('❌ Email send failed (data was saved):', emailError.message);
+        }
 
-        res.status(200).json({ success: true, score });
+        res.status(200).json({ success: true, score, emailSent });
 
     } catch (error) {
         console.error('Server error:', error);
