@@ -25,11 +25,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 const EMAIL_FROM = process.env.SMTP_USER || 'no-reply@alagitech.com';
 
-// Nodemailer transporter — port 465 with direct SSL (more reliable on Render than 587 STARTTLS)
+// Nodemailer transporter — port 465 with direct SSL + connection pooling
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: 465,
     secure: true,
+    // POOL: reuse the verified connection for sends instead of opening new ones
+    pool: true,
+    maxConnections: 1,
+    maxMessages: Infinity,
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -37,11 +41,13 @@ const transporter = nodemailer.createTransport({
     tls: {
         rejectUnauthorized: false,
     },
-    // Force IPv4 at the socket level to prevent IPv6 fallback
+    // Disable internal DNS cache (was serving stale IPv6 entries)
+    dnsCache: false,
+    // Force IPv4 at DNS resolution level
     dnsOptions: { family: 4 },
     connectionTimeout: 30000,
     greetingTimeout: 30000,
-    socketTimeout: 30000,
+    socketTimeout: 60000,
     logger: true,
     debug: true,
 });
