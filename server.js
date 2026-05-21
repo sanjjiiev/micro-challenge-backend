@@ -1,17 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const dns = require('dns');
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 const { createClient } = require('@supabase/supabase-js');
-
-// Force all DNS resolution to IPv4 globally (prevents IPv6 ENETUNREACH on Render)
-dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 
 // Bulletproof CORS Configuration
-// It tries to use your Vercel link, but falls back to '*' (allow all) to prevent 404 blocks
 app.use(cors({ origin: process.env.CLIENT_URL || '*' }));
 app.use(express.json());
 
@@ -23,46 +18,28 @@ app.get('/', (req, res) => {
 // Initialize Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-const EMAIL_FROM = process.env.SMTP_USER || 'no-reply@alagitech.com';
+// SendGrid Configuration
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'no-reply@alagitech.com'; // Must be a verified sender in SendGrid
 
-// Nodemailer transporter — port 465 with direct SSL + connection pooling
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    // POOL: reuse connections for sends
-    pool: true,
-    maxConnections: 1,
-    maxMessages: Infinity,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-    tls: {
-        rejectUnauthorized: false,
-    },
-    // Force strict IPv4 lookup to completely bypass IPv6
-    lookup: (hostname, options, callback) => {
-        dns.lookup(hostname, { family: 4, all: false }, (err, address, family) => {
-            if (err) return callback(err);
-            callback(null, address, family);
-        });
-    },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 60000,
-    logger: true,
-    debug: true,
-});
-
-// We removed transporter.verify() here. 
-// Render's free tier heavily rate-limits SMTP connections. 
-// By removing verify(), we save that precious initial connection for the actual email send.
+if (SENDGRID_API_KEY) {
+    sgMail.setApiKey(SENDGRID_API_KEY);
+    console.log('✅ SendGrid is configured');
+} else {
+    console.warn('⚠️ SENDGRID_API_KEY is missing from environment variables');
+}
 
 const sendEmail = async ({ to, subject, html }) => {
-    return transporter.sendMail({
-        from: `"Alagitech Data Training" <${EMAIL_FROM}>`,
+    if (!SENDGRID_API_KEY) {
+        throw new Error('SendGrid API key not configured');
+    }
+
+    return sgMail.send({
         to,
+        from: {
+            name: "Alagitech Data Training",
+            email: EMAIL_FROM
+        },
         subject,
         html,
     });
