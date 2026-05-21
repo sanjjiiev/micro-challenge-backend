@@ -20,12 +20,23 @@ app.get('/', (req, res) => {
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 // Nodemailer Transporter Setup
+const smtpPort = Number(process.env.SMTP_PORT);
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: false,
+    port: smtpPort,
+    secure: smtpPort === 465,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    tls: {
+        rejectUnauthorized: false,
+    },
+    family: 4,
+    greetingTimeout: 10000,
+    connectionTimeout: 10000,
 });
+
+transporter.verify()
+    .then(() => console.log('SMTP transporter is configured and ready'))
+    .catch(err => console.error('SMTP configuration error:', err));
 
 const COURSE_LINK = "https://alagitech.getlearnworlds.com/course/firststepindataanalysis";
 
