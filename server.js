@@ -30,7 +30,7 @@ const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: 465,
     secure: true,
-    // POOL: reuse the verified connection for sends instead of opening new ones
+    // POOL: reuse connections for sends
     pool: true,
     maxConnections: 1,
     maxMessages: Infinity,
@@ -41,10 +41,13 @@ const transporter = nodemailer.createTransport({
     tls: {
         rejectUnauthorized: false,
     },
-    // Disable internal DNS cache (was serving stale IPv6 entries)
-    dnsCache: false,
-    // Force IPv4 at DNS resolution level
-    dnsOptions: { family: 4 },
+    // Force strict IPv4 lookup to completely bypass IPv6
+    lookup: (hostname, options, callback) => {
+        dns.lookup(hostname, { family: 4, all: false }, (err, address, family) => {
+            if (err) return callback(err);
+            callback(null, address, family);
+        });
+    },
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 60000,
@@ -52,9 +55,9 @@ const transporter = nodemailer.createTransport({
     debug: true,
 });
 
-transporter.verify()
-    .then(() => console.log('✅ SMTP transporter is configured and ready'))
-    .catch(err => console.error('❌ SMTP configuration error:', err));
+// We removed transporter.verify() here. 
+// Render's free tier heavily rate-limits SMTP connections. 
+// By removing verify(), we save that precious initial connection for the actual email send.
 
 const sendEmail = async ({ to, subject, html }) => {
     return transporter.sendMail({
